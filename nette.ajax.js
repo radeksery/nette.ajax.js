@@ -6,7 +6,7 @@
  * @copyright Copyright (c) 2012-2014 Vojtěch Dobeš
  * @license MIT
  *
- * @version 2.4.0
+ * @version 2.4.1
  */
 
 (function(window, $, undefined) {
@@ -14,6 +14,36 @@
 	if (typeof $ !== 'function') {
 		return console.error('nette.ajax.js: jQuery is missing, load it please');
 	}
+
+	// Inspired by https://stackoverflow.com/questions/736513/how-do-i-parse-a-url-into-hostname-and-path-in-javascript
+	var getLocation = function(href) {
+		var k = ['protocol', 'hostname', 'host', 'pathname', 'port', 'search', 'hash', 'href'];
+		var a = document.createElement('a');
+
+		a.href = href;
+
+		// IE doesn't populate all link properties when setting .href with a relative URL,
+		// however .href will return an absolute URL which then can be used on itself
+		// to populate these additional fields.
+		if (a.host === '') {
+			a.href = a.href;
+		}
+
+		for (var r = {}, i = 0; i < k.length; i++) {
+			r[k[i]] = a[k[i]];
+		}
+
+		// IE doesn't return the leading / in pathname
+		if (r.pathname === '') {
+			r.pathname = '/';
+		} else if (r.pathname[0] !== '/') {
+			r.pathname = '/' + r.pathname;
+		}
+
+		r.toString = function() { return a.href; };
+
+		return r;
+	};
 
 	var nette = function () {
 		var inner = {
@@ -335,8 +365,10 @@
 				// Check if URL is absolute
 				if (/(?:^[a-z][a-z0-9+.-]*:|\/\/)/.test(urlToValidate)) {
 					// Parse absolute URL
-					var parsedUrl = new URL(urlToValidate);
-					if (/:|^#/.test(parsedUrl['pathname'] + parsedUrl['search'] + parsedUrl['hash'])) return false;
+					var parsedUrl = getLocation(urlToValidate);
+					if (location.pathname === parsedUrl.pathname && location.search === parsedUrl.search && parsedUrl.hash) {
+						return false;
+					}
 				} else {
 					if (/:|^#/.test(urlToValidate)) return false;
 				}
@@ -415,35 +447,35 @@
 					}
 				}
 
-			// remove empty file inputs as these causes Safari 11 to stall
-			// https://stackoverflow.com/questions/49672992/ajax-request-fails-when-sending-formdata-including-empty-file-input-in-safari
-			if (formData.entries && navigator.userAgent.match(/version\/11(\.[0-9]*)? safari/i)) {
-				// FormData must be polyfilled in IE 11 (https://github.com/jimmywarting/FormData)
-				// for .. of loop is unsupported in IE 11 causing js exception, but it cannot be fixed by for .. in
-				// because FormData.entries(), .keys() etc. returns Symbol iterator which is not iterable by for .. in loop
-				// Symbol iterators is also unsupported in IE 11, so only option to fix it cross-browser is to convert iterator to array.
-				var formDataKeys = formData.keys();
-				var entries = [];
-				var iterationDone = false;
-				while (!iterationDone) {
-					try {
-						var keyItem = formDataKeys.next();
-						iterationDone = keyItem.done;
-						if (!iterationDone) {
-							entries.push([keyItem.value, formData.get(keyItem.value)]);
+				// remove empty file inputs as these causes Safari 11 to stall
+				// https://stackoverflow.com/questions/49672992/ajax-request-fails-when-sending-formdata-including-empty-file-input-in-safari
+				if (formData.entries && navigator.userAgent.match(/version\/11(\.[0-9]*)? safari/i)) {
+					// FormData must be polyfilled in IE 11 (https://github.com/jimmywarting/FormData)
+					// for .. of loop is unsupported in IE 11 causing js exception, but it cannot be fixed by for .. in
+					// because FormData.entries(), .keys() etc. returns Symbol iterator which is not iterable by for .. in loop
+					// Symbol iterators is also unsupported in IE 11, so only option to fix it cross-browser is to convert iterator to array.
+					var formDataKeys = formData.keys();
+					var entries = [];
+					var iterationDone = false;
+					while (!iterationDone) {
+						try {
+							var keyItem = formDataKeys.next();
+							iterationDone = keyItem.done;
+							if (!iterationDone) {
+								entries.push([keyItem.value, formData.get(keyItem.value)]);
+							}
+						} catch (error) {
+							iterationDone = true
 						}
-					} catch (error) {
-						iterationDone = true
 					}
-				}
 
-				for (var index in entries) {
-					var pair = entries[index];
-					if (pair[1] instanceof File && pair[1].name === '' && pair[1].size === 0) {
-						formData.delete(pair[0]);
+					for (var index in entries) {
+						var pair = entries[index];
+						if (pair[1] instanceof File && pair[1].name === '' && pair[1].size === 0) {
+							formData.delete(pair[0]);
+						}
 					}
 				}
-			}
 
 				settings.data = formData;
 				settings.processData = false;
